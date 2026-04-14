@@ -1,9 +1,11 @@
+
+
 name: C Build Release
 
 on:
   push:
     tags:
-      - 'v*' # This triggers the workflow for any tag starting with 'v'
+      - 'v*' 
 
 jobs:
   build:
@@ -16,8 +18,13 @@ jobs:
       - name: Compile Hello World
         run: gcc -o hello_executable main.c
 
-      - name: Save executable as Artifact
+      - name: Run Post-Build Scripts
+        run: |
+          chmod +x ./post.sh
+          ./post.sh
+      - name: Save Release Folder as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-binary
-          path: hello_executable
+          name: release-package
+          # Pointing this to the folder created in post.sh
+          path: releases/
