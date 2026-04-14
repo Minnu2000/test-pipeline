@@ -1,5 +1,3 @@
-
-
 name: C Build Release
 
 on:
@@ -15,16 +13,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Compile Hello World
         run: gcc -o hello_executable main.c
 
       - name: Run Post-Build Scripts
         run: |
+          # 1. Ensure post.sh is executable
           chmod +x ./post.sh
+          # 2. Run post.sh (This MUST create the 'releases' folder)
           ./post.sh
+
+      - name: Execute Python Indexing
+        run: |
+          # We do NOT pass arguments because your script uses a hardcoded BASE_DIR
+          # We check if the folder exists first to avoid script errors
+          if [ -d "releases" ]; then
+            python3 index.py
+          else
+            echo "::error::The 'releases' directory was not created by post.sh!"
+            exit 1
+          fi
+
       - name: Save Release Folder as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-package
-          # Pointing this to the folder created in post.sh
-          path: releases/
+          # This saves everything: the images, the generated index.html files, and style.css
+          path: |
+            releases/
+            style.css
