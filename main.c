@@ -2,6 +2,6 @@
 
 int main() {
     // Print Hello World to the console
-    printf("Hello, World with release tag...!\n");
+    printf("Hello, World without release tag...!\n");
     return 0;
 }
