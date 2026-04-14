@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "architecture": "aarch64_generic",
+  "packages": {
+    "csc-tests-smoketest": "1-r1",
+    "kform-shield-base": "23.05.5-rb1",
+    "nxp-firmware-imx": "1"
+  }
+}
