@@ -1,8 +1,9 @@
-name: C Build Check
+name: C Build Release
 
 on:
   push:
-    branches: [ "main" ]
+    tags:
+      - 'v*' # This triggers the workflow for any tag starting with 'v'
 
 jobs:
   build:
@@ -18,5 +19,5 @@ jobs:
       - name: Save executable as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: compiled-binary   # The name of the download folder
-          path: hello_executable  # The file you want to save
+          name: release-binary
+          path: hello_executable
