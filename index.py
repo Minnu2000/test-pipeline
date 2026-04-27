@@ -182,7 +182,7 @@ def generate_index(dir_path, CSS_PATH):
     print(f"✅ Indexed: {dir_path}")
 
 if __name__ == "__main__":
-    # Ensure releases directory exists
+    # Ensure releases directory exists or not
     if not os.path.exists(BASE_DIR):
         os.makedirs(BASE_DIR)
 
