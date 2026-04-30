@@ -1,6 +1,7 @@
 name: Post-Release Indexing
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows:
       - "C Build Release"
