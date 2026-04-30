@@ -69,4 +69,5 @@ jobs:
       # Step 5: Run indexing script using the downloaded assets
       - name: Run indexing
         run: |
-          ./scripts/indexing.sh release-assets
+          ./index.py release-assets
+          echo "indexing.. completed"
