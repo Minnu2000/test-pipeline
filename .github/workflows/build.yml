@@ -39,11 +39,23 @@ jobs:
             exit 1
           fi
 
-      - name: Save Release Folder as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-package
-          # This saves everything: the images, the generated index.html files, and style.css
-          path: |
-            releases/
-            style.css
+      # - name: Save Release Folder as Artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: release-package
+      #     # This saves everything: the images, the generated index.html files, and style.css
+      #     path: |
+      #       releases/
+      #       style.css
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_TAG: ${{ github.ref_name }}
+        run: |
+          # Ensure the release exists (create if needed)
+          gh release create "$NEW_TAG" \
+            --title "$NEW_TAG" \
+            --notes "Automated release for $NEW_TAG" || true
+
+          # Upload all files from artifacts folder to the release
+          gh release upload "$NEW_TAG" artifacts/**/* --clobber

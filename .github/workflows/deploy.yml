@@ -10,20 +10,17 @@ on:
 
 jobs:
   run-indexing:
-    # Only proceed if:
-    #   1. The triggering workflow succeeded
-    #   2. The release is a full release (not a pre-release) and has a tag
     runs-on: ubuntu-latest
 
     steps:
-      # ── Step 1: Gate on workflow success ──────────────────────────────────
+      # Step 1: Gate on workflow success
       - name: Check triggering workflow conclusion
         if: github.event.workflow_run.conclusion != 'success'
         run: |
           echo "Triggering workflow did not succeed (conclusion: ${{ github.event.workflow_run.conclusion }}). Skipping."
           exit 1
 
-      # ── Step 2: Fetch release info and verify it is a non-prerelease tag ──
+      # Step 2: Fetch release info and verify it is a non-prerelease tag
       - name: Get release for triggering ref
         id: release
         env:
@@ -32,8 +29,6 @@ jobs:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          # Try to find a release whose tag points to the same commit
-          # head_branch contains the tag name when the triggering run was on a tag ref
           RELEASE=$(gh api repos/$REPO/releases/tags/$HEAD_BRANCH 2>/dev/null || true)
 
           if [ -z "$RELEASE" ]; then
@@ -56,43 +51,22 @@ jobs:
 
           echo "✅ Release '$TAG_NAME' is a full release. Proceeding."
 
-      # ── Step 3: Check out the repository (needed for indexing.sh) ─────────
+      # Step 3: Check out the repository
       - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.release.outputs.tag }}
+        uses: actions/checkout
 
-      # ── Step 4: Download all assets from the release ──────────────────────
+      # Step 4: Download release assets from C Build Release
       - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.release.outputs.release_id }}
         run: |
           mkdir -p release-assets
+          gh release download "${{ steps.release.outputs.tag }}" \
+            --dir release-assets \
+            --repo ${{ github.repository }}
+          echo "Downloaded release assets into ./release-assets"
 
-          # List all assets and download each one
-          ASSETS=$(gh api repos/$REPO/releases/$RELEASE_ID/assets \
-            --jq '.[] | "\(.id) \(.name)"')
-
-          if [ -z "$ASSETS" ]; then
-            echo "⚠️  No assets found for this release."
-          else
-            echo "$ASSETS" | while read -r ASSET_ID ASSET_NAME; do
-              echo "Downloading: $ASSET_NAME"
-              gh api repos/$REPO/releases/assets/$ASSET_ID \
-                -H "Accept: application/octet-stream" \
-                > "release-assets/$ASSET_NAME"
-            done
-            echo "✅ All assets downloaded to release-assets/"
-            ls -lh release-assets/
-          fi
-
-      # ── Step 5: Run indexing.sh ────────────────────────────────────────────
-      - name: Run indexing script
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          ASSETS_DIR: ${{ github.workspace }}/release-assets
+      # Step 5: Run indexing script using the downloaded assets
+      - name: Run indexing
         run: |
-          chmod +x ./index.py
-          ./index.py
+          ./scripts/indexing.sh release-assets
