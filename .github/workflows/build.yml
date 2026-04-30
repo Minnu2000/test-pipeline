@@ -51,9 +51,13 @@ jobs:
       #       releases/
       #       style.css
       - name: Upload release assets
-        env:
+         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_TAG: ${{ github.ref_name }}
+        run: |
+          # Create release only if it doesn't exist
+          gh release view "$NEW_TAG" --repo ${{ github.repository }} >/dev/null 2>&1 \
+            || gh release create "$NEW_TAG" --title "$NEW_TAG" --notes "Automated release for $NEW_TAG"
         run: |
           # Ensure the release exists (create if needed)
           gh release create "$NEW_TAG" \
@@ -61,4 +65,4 @@ jobs:
             --notes "Automated release for $NEW_TAG" || true
 
           # Upload all files from artifacts folder to the release
-          gh release upload "$NEW_TAG" artifacts/resources/24.10.3/* --clobber
+          gh release upload "$NEW_TAG" artifacts/resources/24.10.3/target/kform-shield-v1r1/* --clobber
