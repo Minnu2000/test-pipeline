@@ -1,0 +1,138 @@
+name: Publish Artifacts
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to replay (e.g. v1.2.3)'
+        required: true
+        type: string
+
+jobs:
+  resolve-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      upload_url: ${{ steps.resolve.outputs.upload_url }}
+    steps:
+      - name: Resolve tag and release assets
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+
+          echo "Resolving release for tag: $TAG"
+          RELEASE_JSON=$(gh api repos/${{ github.repository }}/releases/tags/$TAG)
+
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.upload_url')
+          ASSETS=$(echo "$RELEASE_JSON" | jq -r '[.assets[].name] | join(", ")')
+
+          echo "tag=$TAG"             >> "$GITHUB_OUTPUT"
+          echo "upload_url=$UPLOAD_URL" >> "$GITHUB_OUTPUT"
+
+          echo "### Release resolved" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Tag:** $TAG"      >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Assets:** $ASSETS" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: resolve-release
+    runs-on:
+      group: OWRT-Build-Runners
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-release.outputs.tag }}
+
+      - name: Install pre-requisites
+        run: |
+          sudo apt-get update && \
+          DEBIAN_FRONTEND=noninteractive \
+          sudo apt-get upgrade --yes && \
+          DEBIAN_FRONTEND=noninteractive \
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            libssl-dev \
+            python3-dev \
+            python3-setuptools \
+            rsync \
+            swig \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            sharutils \
+            swig
+
+      - name: Install cross compilers
+        env:
+          CROSS_COMPILE: /opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+          ARCH: arm64
+        run: |
+          mkdir -p /tmp/dl && \
+          cd /tmp/dl && \
+          wget https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-a/9.2-2019.12/binrel/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz && \
+          tar -C /opt -xf /tmp/dl/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu.tar.xz && \
+          rm -rf /tmp/dl && \
+          ${CROSS_COMPILE}gcc --version
+
+      - name: Build OpenWrt
+        env:
+          CROSS_COMPILE: /opt/gcc-arm-9.2-2019.12-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+          ARCH: arm64
+        run: |
+          ./build.sh build --model=kform-shield
+
+      - name: Generate artifacts
+        run: |
+          chmod +x ./tools/generate_artifacts.sh
+          # This script handles organizing openWRT build artifacts
+          ./tools/generate_artifacts.sh
+
+      - name: Index artifacts
+        run: |
+          # We check if the release folder exists first to avoid script errors
+          if [ -d "releases" ]; then
+            # This script generate static webpage for artifacts
+            python3 ./tools/index_artifacts.py
+          else
+            echo "::error::The 'releases' directory was not created by generate_artifacts.sh!"
+            exit 1
+          fi
+
+      - name: Publish artifacts
+        env:
+          SSH_KEY: ${{ secrets.ARTIFACT_DEPLOY_SSH_KEY }}
+          SERVER_HOST: ${{ vars.ARTIFACT_DEPLOY_SERVER }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: |
+          # 1. Create a secure location for the key
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # 2. Add the server to known_hosts to avoid the "Host authenticity" prompt
+          # This prevents the script from hanging/failing on a new connection
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+          # 3. Perform rsync using the file path, not the raw text
+          #    Scoped to a per-tag subdirectory on the server for clean replay support
+          rsync -av -e "ssh -i ~/.ssh/deploy_key" ./releases/ artifacts@"$SERVER_HOST":/releases/$RELEASE_TAG/
+
+      - name: Save artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shield-images-${{ needs.resolve-release.outputs.tag }}
+          path: artifacts/images/*/
+
+
+
+
