@@ -1,0 +1,97 @@
+name: Post-Release Indexing
+
+on:
+  workflow_run:
+    workflows:
+      - "C Build Release"
+    types:
+      - completed
+
+jobs:
+  run-indexing:
+    # Only proceed if:
+    #   1. The triggering workflow succeeded
+    #   2. The release is a full release (not a pre-release) and has a tag
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Gate on workflow success ──────────────────────────────────
+      - name: Check triggering workflow conclusion
+        if: github.event.workflow_run.conclusion != 'success'
+        run: |
+          echo "Triggering workflow did not succeed (conclusion: ${{ github.event.workflow_run.conclusion }}). Skipping."
+          exit 1
+
+      # ── Step 2: Fetch release info and verify it is a non-prerelease tag ──
+      - name: Get release for triggering ref
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          # Try to find a release whose tag points to the same commit
+          # head_branch contains the tag name when the triggering run was on a tag ref
+          RELEASE=$(gh api repos/$REPO/releases/tags/$HEAD_BRANCH 2>/dev/null || true)
+
+          if [ -z "$RELEASE" ]; then
+            echo "No release found for ref '$HEAD_BRANCH'. Skipping."
+            exit 1
+          fi
+
+          IS_PRERELEASE=$(echo "$RELEASE" | jq -r '.prerelease')
+          TAG_NAME=$(echo "$RELEASE"      | jq -r '.tag_name')
+          RELEASE_ID=$(echo "$RELEASE"    | jq -r '.id')
+
+          echo "tag=$TAG_NAME"           >> "$GITHUB_OUTPUT"
+          echo "release_id=$RELEASE_ID"  >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            echo "Release '$TAG_NAME' is a pre-release. Skipping indexing."
+            exit 1
+          fi
+
+          echo "✅ Release '$TAG_NAME' is a full release. Proceeding."
+
+      # ── Step 3: Check out the repository (needed for indexing.sh) ─────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      # ── Step 4: Download all assets from the release ──────────────────────
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          mkdir -p release-assets
+
+          # List all assets and download each one
+          ASSETS=$(gh api repos/$REPO/releases/$RELEASE_ID/assets \
+            --jq '.[] | "\(.id) \(.name)"')
+
+          if [ -z "$ASSETS" ]; then
+            echo "⚠️  No assets found for this release."
+          else
+            echo "$ASSETS" | while read -r ASSET_ID ASSET_NAME; do
+              echo "Downloading: $ASSET_NAME"
+              gh api repos/$REPO/releases/assets/$ASSET_ID \
+                -H "Accept: application/octet-stream" \
+                > "release-assets/$ASSET_NAME"
+            done
+            echo "✅ All assets downloaded to release-assets/"
+            ls -lh release-assets/
+          fi
+
+      # ── Step 5: Run indexing.sh ────────────────────────────────────────────
+      - name: Run indexing script
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          ASSETS_DIR: ${{ github.workspace }}/release-assets
+        run: |
+          chmod +x ./indexing.sh
+          ./indexing.sh
