@@ -58,7 +58,7 @@ jobs:
           # Create release only if it doesn't exist
           gh release view "$NEW_TAG" --repo ${{ github.repository }} >/dev/null 2>&1 \
             || gh release create "$NEW_TAG" --title "$NEW_TAG" --notes "Automated release for $NEW_TAG"
-        run: |
+
           # Ensure the release exists (create if needed)
           gh release create "$NEW_TAG" \
             --title "$NEW_TAG" \
