@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
 
     steps:
       - name: Checkout code
@@ -58,4 +61,4 @@ jobs:
             --notes "Automated release for $NEW_TAG" || true
 
           # Upload all files from artifacts folder to the release
-          gh release upload "$NEW_TAG" artifacts/**/* --clobber
+          gh release upload "$NEW_TAG" artifacts/resources/24.10.3/* --clobber
