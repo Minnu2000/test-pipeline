@@ -1,4 +1,4 @@
-name: Artifact Release
+name: Artifact Releases
 
 on:
   push:
