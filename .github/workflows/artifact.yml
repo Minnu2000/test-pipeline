@@ -51,18 +51,28 @@ jobs:
       #       releases/
       #       style.css
       - name: Create GitHub pre-release
+        id: create_tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.check.outputs.new_tag }}" \
-            --title "${{ steps.check.outputs.new_tag }}" \
-            --notes "${{ steps.changelog.outputs.notes }}" \
+          # Generate a unique tag based on date and short SHA
+          TAG_NAME="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
+          echo "Generated Tag: $TAG_NAME"
+          
+          # Set it as an output for the next step to use
+          echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          gh release create "$TAG_NAME" \
+            --title "Pre-release $TAG_NAME" \
+            --notes "Automated pre-release build from main branch." \
             --prerelease
+
       - name: Upload artifacts to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          NEW_TAG="${{ steps.check.outputs.new_tag }}"
+          # Read the tag from the previous step's output
+          NEW_TAG="${{ steps.create_tag.outputs.tag }}"
           PROFILES="kform-shield-v1r3 kform-shield-v1r5"
 
           for profile in $PROFILES; do
