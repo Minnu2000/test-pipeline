@@ -58,10 +58,19 @@ jobs:
           PROFILES="kform-shield-v1r3 kform-shield-v1r5"
 
           for profile in $PROFILES; do
-            echo "Uploading artifacts for $profile..."
-            gh release upload "$NEW_TAG" \
-              "artifacts/images/latest/${profile}/${profile}-factory.img.tar.gz" \
-              "artifacts/images/latest/${profile}/${profile}-sysupgrade.bin"
+            profile_dir="artifacts/images/latest/${profile}"
+            zip_name="${profile}-images.zip"
+
+            echo "Packaging artifacts for $profile..."
+            zip -j "${zip_name}" \
+              "${profile_dir}/${profile}-d2d4-bootloader.img" \
+              "${profile_dir}/${profile}-d1d8-bootloader.img" \
+              "${profile_dir}/${profile}-kernel.img" \
+              "${profile_dir}/${profile}-rootfs.img" \
+              "${profile_dir}/${profile}-sysupgrade.bin"
+
+            echo "Uploading ${zip_name}..."
+            gh release upload "$NEW_TAG" "${zip_name}"
           done
 
           echo "All artifacts uploaded successfully"
