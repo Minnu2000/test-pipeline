@@ -1,9 +1,16 @@
 name: C Build Release
 
+# on:
+#   push:
+#     tags:
+#       - 'v*' 
+
 on:
-  push:
-    tags:
-      - 'v*' 
+  workflow_dispatch:
+  release:
+    types:
+      - released
+
 
 jobs:
   build:

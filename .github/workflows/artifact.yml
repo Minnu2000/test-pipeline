@@ -1,0 +1,74 @@
+name: C Build Release
+
+on:
+  push:
+    tags:
+      - 'v*' 
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - released
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Compile Hello World
+        run: gcc -o hello_executable main.c
+
+      - name: Run Post-Build Scripts
+        run: |
+          # 1. Ensure post.sh is executable
+          chmod +x ./post.sh
+          # 2. Run post.sh (This MUST create the 'releases' folder)
+          ./post.sh
+
+      # - name: Execute Python Indexing
+      #   run: |
+      #     # We do NOT pass arguments because your script uses a hardcoded BASE_DIR
+      #     # We check if the folder exists first to avoid script errors
+      #     if [ -d "releases" ]; then
+      #       python3 index.py
+      #     else
+      #       echo "::error::The 'releases' directory was not created by post.sh!"
+      #       exit 1
+      #     fi
+
+      # - name: Save Release Folder as Artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: release-package
+      #     # This saves everything: the images, the generated index.html files, and style.css
+      #     path: |
+      #       releases/
+      #       style.css
+      - name: Upload artifacts to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NEW_TAG="${{ steps.check.outputs.new_tag }}"
+          PROFILES="kform-shield-v0 kform-shield-v1r1 kform-shield-v1r3 kform-shield-v1r5"
+
+          for profile in $PROFILES; do
+            echo "Uploading artifacts for $profile..."
+            gh release upload "$NEW_TAG" \
+              "artifacts/images/latest/${profile}/${profile}-factory.img.tar.gz" \
+              "artifacts/images/latest/${profile}/${profile}-sysupgrade.bin"
+          done
+
+          echo "All artifacts uploaded successfully"
