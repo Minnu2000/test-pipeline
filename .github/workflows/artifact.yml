@@ -55,7 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           NEW_TAG="${{ steps.check.outputs.new_tag }}"
-          PROFILES="kform-shield-v0 kform-shield-v1r1 kform-shield-v1r3 kform-shield-v1r5"
+          PROFILES="kform-shield-v1r3 kform-shield-v1r5"
 
           for profile in $PROFILES; do
             echo "Uploading artifacts for $profile..."
