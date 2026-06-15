@@ -1,16 +1,9 @@
-name: C Build Release
+name: Artifact Release
 
 on:
   push:
-    tags:
-      - 'v*' 
-
-on:
-  workflow_dispatch:
-  release:
-    types:
-      - released
-
+    branches:
+      - main
 
 jobs:
   build:
