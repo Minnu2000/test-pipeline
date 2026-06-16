@@ -74,21 +74,42 @@ jobs:
           # Read the tag from the previous step's output
           NEW_TAG="${{ steps.create_tag.outputs.tag }}"
           PROFILES="kform-shield-v1r3 kform-shield-v1r5"
+          DDR_VARIANTS="d2d4 d1d8"
+          IMGTYPES="kernel.img rootfs.img sysupgrade.bin"
 
           for profile in $PROFILES; do
             profile_dir="artifacts/images/latest/${profile}"
+            zip_files=() # Array to dynamically collect verified files
+
+            echo "--- Validating artifacts for $profile ---"
+            
+            # Validate bootloader variants
+            for ddr in $DDR_VARIANTS; do
+              artifact="${profile_dir}/${profile}-${ddr}-bootloader.img"
+              [ -f "$artifact" ] || { echo "ERROR: missing: $artifact"; exit 1; }
+              [ -s "$artifact" ] || { echo "ERROR: empty: $artifact"; exit 1; }
+              echo "[OK] ${profile}-${ddr}-bootloader.img ($(du -h "$artifact" | cut -f1))"
+              zip_files+=("$artifact")
+            done
+            
+            # Validate generic image types
+            for imgtype in $IMGTYPES; do
+              artifact="${profile_dir}/${profile}-${imgtype}"
+              [ -f "$artifact" ] || { echo "ERROR: missing: $artifact"; exit 1; }
+              [ -s "$artifact" ] || { echo "ERROR: empty: $artifact"; exit 1; }
+              echo "[OK] ${profile}-${imgtype} ($(du -h "$artifact" | cut -f1))"
+              zip_files+=("$artifact")
+            done
+
             zip_name="${profile}-images.zip"
+            echo "Packaging ${zip_name}..."
+            
+            # Pass the dynamically generated array to zip
+            # Note: -j junk paths, so filenames remain clean inside the zip
+            zip -j "${zip_name}" "${zip_files[@]}"
 
-            echo "Packaging artifacts for $profile..."
-            zip -j "${zip_name}" \
-              "${profile_dir}/${profile}-d2d4-bootloader.img" \
-              "${profile_dir}/${profile}-d1d8-bootloader.img" \
-              "${profile_dir}/${profile}-kernel.img" \
-              "${profile_dir}/${profile}-rootfs.img" \
-              "${profile_dir}/${profile}-sysupgrade.bin"
-
-            echo "Uploading ${zip_name}..."
-            gh release upload "$NEW_TAG" "${zip_name}"
+            echo "Uploading ${zip_name} to release ${NEW_TAG}..."
+            gh release upload "$NEW_TAG" "${zip_name}" --clobber
           done
 
           echo "All artifacts uploaded successfully"
