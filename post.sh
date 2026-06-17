@@ -1,16 +1,12 @@
 #!/bin/bash
 
-# Create the releases directory
-mkdir -p releases
+# post.sh - Save the config name to a file
+# Usage: ./post.sh <config_name>
 
-# Move the binary generated in the previous step
-if [ -f "./hello_executable" ]; then
-    cp ./hello_executable ./releases/
-fi
+CONFIG_NAME=$1
 
-# Move any other generated artifacts/folders
-if [ -d "./artifacts" ]; then
-    cp -r ./artifacts ./releases/
-fi
+echo "Config: $CONFIG_NAME" > build_config.txt
+echo "Build completed at: $(date)" >> build_config.txt
 
-echo "Releases folder prepared."
+echo "Saved config '$CONFIG_NAME' to build_config.txt"
+cat build_config.txt

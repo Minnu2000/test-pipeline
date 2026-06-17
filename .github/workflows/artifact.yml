@@ -10,7 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+    
+    strategy:
+      matrix:
+        config: ["arm64", "armv7", "x86_64"]
+      fail-fast: false
 
     steps:
       - name: Checkout code
@@ -22,94 +26,49 @@ jobs:
           python-version: '3.x'
 
       - name: Compile Hello World
-        run: gcc -o hello_executable main.c
+        run: gcc -o hello_executable_${{ matrix.config }} main.c
 
       - name: Run Post-Build Scripts
         run: |
-          # 1. Ensure post.sh is executable
           chmod +x ./post.sh
-          # 2. Run post.sh (This MUST create the 'releases' folder)
-          ./post.sh
+          ./post.sh ${{ matrix.config }}
 
-      # - name: Execute Python Indexing
-      #   run: |
-      #     # We do NOT pass arguments because your script uses a hardcoded BASE_DIR
-      #     # We check if the folder exists first to avoid script errors
-      #     if [ -d "releases" ]; then
-      #       python3 index.py
-      #     else
-      #       echo "::error::The 'releases' directory was not created by post.sh!"
-      #       exit 1
-      #     fi
+      - name: Save Build Config File
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-${{ matrix.config }}
+          path: build_config.txt
 
-      # - name: Save Release Folder as Artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: release-package
-      #     # This saves everything: the images, the generated index.html files, and style.css
-      #     path: |
-      #       releases/
-      #       style.css
       - name: Create GitHub pre-release
+        if: matrix.config == 'arm64'
         id: create_tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Generate a unique tag based on date and short SHA
           TAG_NAME="v$(date +'%Y.%m.%d')-${GITHUB_SHA::7}"
           echo "Generated Tag: $TAG_NAME"
-          
-          # Set it as an output for the next step to use
           echo "tag=$TAG_NAME" >> $GITHUB_OUTPUT
           
           gh release create "$TAG_NAME" \
             --title "Pre-release $TAG_NAME" \
-            --notes "Automated pre-release build from main branch." \
+            --notes "Automated pre-release build with matrix: ${{ matrix.config }}" \
             --prerelease
 
       - name: Upload artifacts to release
+        if: matrix.config == 'arm64'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Read the tag from the previous step's output
           NEW_TAG="${{ steps.create_tag.outputs.tag }}"
-          PROFILES="kform-shield-v1r3 kform-shield-v1r5"
-          DDR_VARIANTS="d2d4 d1d8"
-          IMGTYPES="kernel.img rootfs.img sysupgrade.bin"
-
-          for profile in $PROFILES; do
-            profile_dir="artifacts/images/latest/${profile}"
-            zip_files=() # Array to dynamically collect verified files
-
-            echo "--- Validating artifacts for $profile ---"
-            
-            # Validate bootloader variants
-            for ddr in $DDR_VARIANTS; do
-              artifact="${profile_dir}/${profile}-${ddr}-bootloader.img"
-              [ -f "$artifact" ] || { echo "ERROR: missing: $artifact"; exit 1; }
-              # [ -s "$artifact" ] || { echo "ERROR: empty: $artifact"; exit 1; }
-              echo "[OK] ${profile}-${ddr}-bootloader.img ($(du -h "$artifact" | cut -f1))"
-              zip_files+=("$artifact")
-            done
-            
-            # Validate generic image types
-            for imgtype in $IMGTYPES; do
-              artifact="${profile_dir}/${profile}-${imgtype}"
-              [ -f "$artifact" ] || { echo "ERROR: missing: $artifact"; exit 1; }
-              # [ -s "$artifact" ] || { echo "ERROR: empty: $artifact"; exit 1; }
-              echo "[OK] ${profile}-${imgtype} ($(du -h "$artifact" | cut -f1))"
-              zip_files+=("$artifact")
-            done
-
-            zip_name="${profile}-images.zip"
-            echo "Packaging ${zip_name}..."
-            
-            # Pass the dynamically generated array to zip
-            # Note: -j junk paths, so filenames remain clean inside the zip
-            zip -j "${zip_name}" "${zip_files[@]}"
-
-            echo "Uploading ${zip_name} to release ${NEW_TAG}..."
-            gh release upload "$NEW_TAG" "${zip_name}" --clobber
+          
+          # Upload all config artifacts
+          for config in arm64 armv7 x86_64; do
+            if [ -f "config-${config}/build_config.txt" ]; then
+              zip_name="${config}-build.zip"
+              zip -j "${zip_name}" "config-${config}/build_config.txt"
+              echo "Uploading ${zip_name} to release ${NEW_TAG}..."
+              gh release upload "$NEW_TAG" "${zip_name}" --clobber
+            fi
           done
-
-          echo "All artifacts uploaded successfully"
+          
+          echo "All matrix artifacts uploaded successfully"
