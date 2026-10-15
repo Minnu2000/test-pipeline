@@ -1,82 +1,49 @@
 name: Indexing and deployment
-
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - "C Build Release"
-    types:
-      - completed
 
 jobs:
-  run-indexing:
+  mount-binaries:
     runs-on: ubuntu-latest
-    
 
     steps:
-      # Step 1: Gate on workflow success
-      - name: Check triggering workflow conclusion
-        if: github.event.workflow_run.conclusion != 'success'
+      - name: Create mount point directories
         run: |
-          echo "Triggering workflow did not succeed (conclusion: ${{ github.event.workflow_run.conclusion }}). Skipping."
-          exit 1
+          mkdir -p test/bin test/usr-bin
 
-      # Step 2: Fetch release info and verify it is a non-prerelease tag
-      - name: Get release for triggering ref
-        id: release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
-          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      - name: Mount system binaries into test directory
         run: |
-          RELEASE=$(gh api repos/$REPO/releases/tags/$HEAD_BRANCH 2>/dev/null || true)
+          set -e
 
-          if [ -z "$RELEASE" ]; then
-            echo "No release found for ref '$HEAD_BRANCH'. Skipping."
+          sudo mount --bind /bin test/bin
+          sudo mount --bind /usr/bin test/usr-bin
+
+          echo "Mounted /bin -> $(pwd)/test/bin"
+          echo "Mounted /usr/bin -> $(pwd)/test/usr-bin"
+
+      - name: Verify mounted binaries
+        run: |
+          set -e
+
+          if [ -x test/bin/ls ] && [ -x test/usr-bin/env ]; then
+            echo "SUCCESS: System binaries are mounted and executable."
+            ls -ld test/bin test/usr-bin
+          else
+            echo "ERROR: Expected system binaries were not found."
             exit 1
           fi
 
-          IS_PRERELEASE=$(echo "$RELEASE" | jq -r '.prerelease')
-          TAG_NAME=$(echo "$RELEASE"      | jq -r '.tag_name')
-          RELEASE_ID=$(echo "$RELEASE"    | jq -r '.id')
-
-          echo "tag=$TAG_NAME"           >> "$GITHUB_OUTPUT"
-          echo "release_id=$RELEASE_ID"  >> "$GITHUB_OUTPUT"
-          echo "is_prerelease=$IS_PRERELEASE" >> "$GITHUB_OUTPUT"
-
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            echo "Release '$TAG_NAME' is a pre-release. Skipping indexing."
-            exit 1
+      - name: Print result
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "SUCCESS: Mount test completed successfully."
+          else
+            echo "ERROR: Mount test failed."
           fi
 
-          echo "✅ Release '$TAG_NAME' is a full release. Proceeding."
-
-      # Step 3: Check out the repository
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-
-      # Step 4: Download release assets from C Build Release
-      - name: Download release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Unmount test directories
+        if: always()
         run: |
-          mkdir -p release-assets
-          gh release download "${{ steps.release.outputs.tag }}" \
-            --dir release-assets \
-            --repo ${{ github.repository }}
-          echo "Downloaded release assets into ./release-assets"
-
-      # Step 5: Run indexing script using the downloaded assets
-      - name: Run indexing
-        run: |
-          python3 ./index.py release-assets
-          echo "indexing.. completed"
-      - name: Save Release Folder as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-package
-          # This saves everything: the images, the generated index.html files, and style.css
-          path: |
-            releases/
+          sudo umount test/bin || true
+          sudo umount test/usr-bin || true
