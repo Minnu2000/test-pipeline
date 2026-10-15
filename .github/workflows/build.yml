@@ -8,12 +8,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Create test directory
+      - name: Create mount point directories
         run: |
-          mkdir -p test
+          mkdir -p test/bin test/usr-bin
 
       - name: Mount system binaries into test directory
-        id: mount
         run: |
           set -e
 
