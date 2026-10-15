@@ -1,75 +1,51 @@
 name: C Build Release
 
-# on:
-#   push:
-#     tags:
-#       - 'v*' 
-
 on:
   workflow_dispatch:
-  release:
-    types:
-      - released
-
 
 jobs:
-  build:
+  mount-binaries:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Compile Hello World
-        run: gcc -o hello_executable main.c
-
-      - name: Run Post-Build Scripts
+      - name: Create test directory
         run: |
-          # 1. Ensure post.sh is executable
-          chmod +x ./post.sh
-          # 2. Run post.sh (This MUST create the 'releases' folder)
-          ./post.sh
+          mkdir -p test
 
-      # - name: Execute Python Indexing
-      #   run: |
-      #     # We do NOT pass arguments because your script uses a hardcoded BASE_DIR
-      #     # We check if the folder exists first to avoid script errors
-      #     if [ -d "releases" ]; then
-      #       python3 index.py
-      #     else
-      #       echo "::error::The 'releases' directory was not created by post.sh!"
-      #       exit 1
-      #     fi
-
-      # - name: Save Release Folder as Artifact
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: release-package
-      #     # This saves everything: the images, the generated index.html files, and style.css
-      #     path: |
-      #       releases/
-      #       style.css
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NEW_TAG: ${{ github.ref_name }}
+      - name: Mount system binaries into test directory
+        id: mount
         run: |
-          # Create release only if it doesn't exist
-          gh release view "$NEW_TAG" --repo ${{ github.repository }} >/dev/null 2>&1 \
-            || gh release create "$NEW_TAG" --title "$NEW_TAG" --notes "Automated release for $NEW_TAG"
+          set -e
 
-          # Ensure the release exists (create if needed)
-          gh release create "$NEW_TAG" \
-            --title "$NEW_TAG" \
-            --notes "Automated release for $NEW_TAG" || true
+          sudo mount --bind /bin test/bin
+          sudo mount --bind /usr/bin test/usr-bin
 
-          # Upload all files from artifacts folder to the release
-          gh release upload "$NEW_TAG" artifacts/resources/24.10.3/target/kform-shield-v1r1/* --clobber
+          echo "Mounted /bin -> $(pwd)/test/bin"
+          echo "Mounted /usr/bin -> $(pwd)/test/usr-bin"
+
+      - name: Verify mounted binaries
+        run: |
+          set -e
+
+          if [ -x test/bin/ls ] && [ -x test/usr-bin/env ]; then
+            echo "SUCCESS: System binaries are mounted and executable."
+            ls -ld test/bin test/usr-bin
+          else
+            echo "ERROR: Expected system binaries were not found."
+            exit 1
+          fi
+
+      - name: Print result
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "SUCCESS: Mount test completed successfully."
+          else
+            echo "ERROR: Mount test failed."
+          fi
+
+      - name: Unmount test directories
+        if: always()
+        run: |
+          sudo umount test/bin || true
+          sudo umount test/usr-bin || true
